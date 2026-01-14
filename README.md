@@ -38,19 +38,19 @@ ip:port:user:pass
 ## ▶️ Примеры запуска
 
 Обычный запуск:
-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490
+-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490
 
 С логами и прогрессом:
-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --verbose --progress-every 10
+-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --verbose --progress-every 10
 
 Repair + append:
-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490
+-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490
 
 Несколько проходов по прокси:
-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --proxy-passes 3
+-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --proxy-passes 3
 
 Большой запуск:
-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490 --workers 
+-python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490 --workers 
 6 --global-interval 1.2 --max-req-per-proxy 10 --proxy-passes 10 --progress-every 10 --verbose --task-retries 10
 
 ## 🔁 Проходы по прокси
