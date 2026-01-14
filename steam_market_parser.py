@@ -73,19 +73,39 @@ class GlobalRateLimiter:
 # -----------------------------
 
 class ProxyPool:
-    """Выдаёт прокси строго по очереди, без пересечений между потоками."""
-    def __init__(self, proxies: List[Proxy]):
+    """
+    Выдаёт прокси по очереди, без пересечений между потоками.
+    Если прокси закончились — начинает заново (pass++),
+    но не более max_passes раз.
+    """
+    def __init__(self, proxies: List[Proxy], max_passes: int = 1):
         self._proxies = proxies
         self._lock = threading.Lock()
         self._idx = 0
+        self._pass = 1
+        self._max_passes = max(1, int(max_passes))
 
     def acquire_next(self) -> Optional[Proxy]:
         with self._lock:
-            if self._idx >= len(self._proxies):
+            if not self._proxies:
                 return None
+
+            if self._idx >= len(self._proxies):
+                # закончили текущий проход по списку прокси
+                self._pass += 1
+                if self._pass > self._max_passes:
+                    return None
+                self._idx = 0  # новый проход
+
             p = self._proxies[self._idx]
             self._idx += 1
             return p
+
+    def state(self) -> Tuple[int, int]:
+        """(текущий проход, максимум проходов)"""
+        with self._lock:
+            return self._pass, self._max_passes
+
 
 
 # -----------------------------
@@ -368,6 +388,8 @@ def worker(
     rate_limiter: Optional[GlobalRateLimiter],
     stats: dict,
     stats_lock: threading.Lock,
+    verbose: bool,
+    stop_evt: threading.Event,
 ):
     session = requests.Session()
 
@@ -378,20 +400,28 @@ def worker(
         nonlocal current_proxy, current_proxy_left
         current_proxy = proxy_pool.acquire_next()
         if current_proxy is None:
+            # прокси/проходы закончились — просим все потоки завершаться
+            stop_evt.set()
             return False
         current_proxy_left = max_requests_per_proxy
         return True
+
 
     if not rotate_proxy():
         return
 
     while True:
+        if stop_evt.is_set():
+            return
         try:
             task = tasks_q.get(timeout=2.0)
         except queue.Empty:
             return
 
         start = task.start
+        if verbose:
+            print(f"[worker {worker_id}] start={start} tries_left={task.tries_left}")
+
         exp = expected_count_for_start(total_count, count, start)
         if exp <= 0:
             tasks_q.task_done()
@@ -442,6 +472,8 @@ def worker(
                 results_q.put(ItemRow(fetched_at, start, name, price_usd, url))
 
             ok = True
+            if verbose:
+                print(f"[worker {worker_id}] start={start} OK items={len(items)}")
 
         except requests.HTTPError as e:
             status_code = getattr(e.response, "status_code", None)
@@ -465,6 +497,13 @@ def worker(
 
         # если не ок — возвращаем в очередь (если есть попытки)
         if not ok:
+            if verbose:
+                sc = status_code if status_code is not None else "-"
+                if task.tries_left > 0:
+                    print(f"[worker {worker_id}] start={start} FAIL {sc} err={last_err} -> requeue (left={task.tries_left - 1})")
+                else:
+                    print(f"[worker {worker_id}] start={start} FAIL {sc} err={last_err} -> drop")
+
             # Для 403/429 лучше сразу сменить прокси
             if status_code in (403, 429):
                 rotate_proxy()
@@ -480,6 +519,20 @@ def worker(
 
         time.sleep(base_delay_s + random.uniform(0, 0.4))
 
+def progress_printer(progress_every_s: float, tasks_q: "queue.Queue[Task]", stats: dict, lock: threading.Lock, stop_evt: threading.Event):
+    if progress_every_s <= 0:
+        return
+    while not stop_evt.is_set():
+        time.sleep(progress_every_s)
+        with lock:
+            s = dict(stats)
+        # qsize() на Windows иногда не идеально точный, но для “жив ли процесс” — ок
+        try:
+            qn = tasks_q.qsize()
+        except Exception:
+            qn = -1
+        print(f"[progress] queue={qn} processed={s.get('processed',0)} ok={s.get('ok',0)} "
+              f"fail={s.get('fail',0)} 429={s.get('429',0)} 403={s.get('403',0)}")
 
 # -----------------------------
 # Main
@@ -513,6 +566,10 @@ def main():
     # Глобальный интервал между запросами всех потоков (главная защита от 429)
     ap.add_argument("--global-interval", type=float, default=0.9,
                     help="Глобальный интервал между любыми запросами (сек). 0=выкл")
+    ap.add_argument("--verbose", action="store_true", help="Подробные логи в консоли")
+    ap.add_argument("--progress-every", type=float, default=10.0, help="Печатать прогресс каждые N секунд (0=выкл)")
+    ap.add_argument("--proxy-passes", type=int, default=1,
+                help="Сколько раз пройти по списку прокси заново (циклы). 1 = как сейчас")
 
     args = ap.parse_args()
 
@@ -586,7 +643,7 @@ def main():
         print("Нечего делать.")
         return
 
-    proxy_pool = ProxyPool(proxies)
+    proxy_pool = ProxyPool(proxies, max_passes=args.proxy_passes)
     results_q: "queue.Queue[Optional[ItemRow]]" = queue.Queue(maxsize=12000)
 
     rate_limiter = GlobalRateLimiter(args.global_interval) if args.global_interval and args.global_interval > 0 else None
@@ -594,6 +651,12 @@ def main():
     # Stats
     stats = {"processed": 0, "ok": 0, "fail": 0, "429": 0, "403": 0, "other_err": 0}
     stats_lock = threading.Lock()
+    stop_evt = threading.Event()
+    prog_t = threading.Thread(
+    target=progress_printer,
+    args=(args.progress_every, tasks_q, stats, stats_lock, stop_evt),
+    daemon=True,)
+    prog_t.start()
 
     writer_t = threading.Thread(target=excel_writer, args=(args.out, args.append, results_q, seen_urls), daemon=True)
     writer_t.start()
@@ -620,14 +683,38 @@ def main():
                 rate_limiter,
                 stats,
                 stats_lock,
+                args.verbose,
+                stop_evt,
             ),
             daemon=True,
         )
         t.start()
         threads.append(t)
 
-    # Ждём пока очередь задач будет полностью обработана (включая повторно добавленные)
-    tasks_q.join()
+    # Ждём завершения очереди, но если прокси/проходы закончились — аккуратно завершаем
+    while True:
+        if tasks_q.unfinished_tasks == 0:
+            break
+
+        if stop_evt.is_set():
+            # никто больше не обработает оставшиеся задачи — нужно "разлочить" unfinished_tasks
+            drained = 0
+            while True:
+                try:
+                    tasks_q.get_nowait()
+                    tasks_q.task_done()
+                    drained += 1
+                except queue.Empty:
+                    break
+            print(f"[main] STOP: прокси/проходы закончились. Снято невыполненных задач из очереди: {drained}")
+            break
+
+        time.sleep(0.5)
+
+    stop_evt.set()
+
+    for t in threads:
+        t.join(timeout=2.0)
 
     # Останавливаем writer
     results_q.put(None)
