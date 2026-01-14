@@ -32,3 +32,7 @@
 - Установленные библиотеки:
   ```bash
   pip install requests beautifulsoup4 lxml openpyxl
+Пример команды для запуска
+``` 
+python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490 --workers 
+8 --global-interval 1.0 --task-retries 6 --max-req-per-proxy 10 --sort-column name --sort-dir desc
