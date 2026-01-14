@@ -38,20 +38,20 @@ ip:port:user:pass
 ## ▶️ Примеры запуска
 
 Обычный запуск:
--python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490
+`python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490`
 
 С логами и прогрессом:
--python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --verbose --progress-every 10
+`python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --verbose --progress-every 10`
 
 Repair + append:
--python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490
+`python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490`
 
 Несколько проходов по прокси:
--python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --proxy-passes 3
+`python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --appid 252490 --proxy-passes 3`
 
 Большой запуск:
--python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490 --workers 
-6 --global-interval 1.2 --max-req-per-proxy 10 --proxy-passes 10 --progress-every 10 --verbose --task-retries 10
+`python steam_market_parser.py --proxies proxies.txt --out rust.xlsx --append --repair --total-count 5026 --appid 252490 --workers 
+6 --global-interval 1.2 --max-req-per-proxy 10 --proxy-passes 10 --progress-every 10 --verbose --task-retries 10`
 
 ## 🔁 Проходы по прокси
 
@@ -65,24 +65,24 @@ Repair + append:
 Это полезно, если прокси мало, но страниц много.
 
 Пример:
-python steam_market_parser.py --proxies proxies.txt --appid 252490 --proxy-passes 5
+`python steam_market_parser.py --proxies proxies.txt --appid 252490 --proxy-passes 5`
 
 ## ⚙️ Основные параметры
 
---proxies           путь к proxies.txt
---out               выходной Excel файл
---appid             Steam appid
---workers           количество потоков
---count             предметов за один запрос
---timeout           таймаут HTTP-запроса (сек)
---delay             задержка между запросами в воркере
---global-interval   глобальный лимит запросов (на все потоки)
---max-req-per-proxy максимум запросов на один прокси
---proxy-passes      количество проходов по списку прокси
---append            дописывать в существующий файл
---repair            докачивать недостающие страницы
---task-retries      сколько раз возвращать страницу в очередь
---sort-column       поле сортировки (name / price / quantity)
---sort-dir          направление сортировки (asc / desc)
---progress-every    вывод прогресса каждые N секунд
---verbose           подробные логи
+`--proxies           путь к proxies.txt`
+`--out               выходной Excel файл`
+`--appid             Steam appid`
+`--workers           количество потоков`
+`--count             предметов за один запрос`
+`--timeout           таймаут HTTP-запроса (сек)`
+`--delay             задержка между запросами в воркере`
+`--global-interval   глобальный лимит запросов (на все потоки)`
+`--max-req-per-proxy максимум запросов на один прокси`
+`--proxy-passes      количество проходов по списку прокси`
+`--append            дописывать в существующий файл`
+`--repair            докачивать недостающие страницы`
+`--task-retries      сколько раз возвращать страницу в очередь`
+`--sort-column       поле сортировки (name / price / quantity)`
+`--sort-dir          направление сортировки (asc / desc)`
+`--progress-every    вывод прогресса каждые N секунд`
+`--verbose           подробные логи`
