@@ -20,8 +20,6 @@ from selenium.webdriver.support import expected_conditions as EC
 # Configuration & Utils
 # -------------------------------------------------------------
 
-SESSION_FILE = "skinswap_session.json"
-
 def format_price(cents: int) -> str:
     if cents is None:
         return ""
@@ -35,7 +33,7 @@ def get_random_user_agent() -> str:
 # Session Management (Selenium)
 # -------------------------------------------------------------
 
-def get_session_cookies_via_selenium() -> dict:
+def get_session_cookies_via_selenium(session_file: str) -> dict:
     print("Запуск браузера для авторизации. Пожалуйста, войдите через Steam...")
     
     options = uc.ChromeOptions()
@@ -86,19 +84,19 @@ def get_session_cookies_via_selenium() -> dict:
             "timestamp": time.time()
         }
         
-        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+        with open(session_file, "w", encoding="utf-8") as f:
             json.dump(session_data, f, indent=4)
             
-        print(f"Сессия сохранена в {SESSION_FILE}")
+        print(f"Сессия сохранена в {session_file}")
         return session_data
         
     finally:
         driver.quit()
 
-def load_session() -> dict:
-    if os.path.exists(SESSION_FILE):
+def load_session(session_file: str) -> dict:
+    if os.path.exists(session_file):
         try:
-            with open(SESSION_FILE, "r", encoding="utf-8") as f:
+            with open(session_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 
                 # Базовая проверка "протухания" (допустим 24 часа)
@@ -112,11 +110,11 @@ def load_session() -> dict:
             return {}
     return {}
 
-def ensure_session() -> dict:
-    session_data = load_session()
+def ensure_session(session_file: str) -> dict:
+    session_data = load_session(session_file)
     if not session_data or not session_data.get("token"):
         print("Нет сохраненной сессии или токена.")
-        session_data = get_session_cookies_via_selenium()
+        session_data = get_session_cookies_via_selenium(session_file)
     else:
         print("Найдена сохраненная сессия. Проверяем токен...")
         
@@ -311,18 +309,21 @@ def main():
     ap.add_argument("--timeout", type=int, default=15, help="Таймаут запросов")
     ap.add_argument("--verbose", action="store_true", help="Включить подробные логи API")
     ap.add_argument("--accepted-only", action="store_true", help="ФИЛЬТР: сохранить только вещи, которые Skinswap принимает (accepted=true)")
+    ap.add_argument("--user-profile", default="default", help="Имя профиля для сохранения сессии (например: user1).")
 
     args = ap.parse_args()
+    
+    session_file = f"skinswap_session_{args.user_profile}.json"
 
     # 1. Получение / проверка сессии
-    session_data = load_session()
+    session_data = load_session(session_file)
     
     if session_data and not check_auth_validity(session_data, args.appid):
         print("Запускаем браузер для обновления куки...")
-        session_data = get_session_cookies_via_selenium()
+        session_data = get_session_cookies_via_selenium(session_file)
         
     elif not session_data:
-        session_data = get_session_cookies_via_selenium()
+        session_data = get_session_cookies_via_selenium(session_file)
         
     if not session_data or not session_data.get("token"):
         print("Фатальная ошибка: Не удалось получить токен авторизации. Выход.")
@@ -404,8 +405,8 @@ def main():
         print("[Внимание] Возникли критические сетевые ошибки или токен устарел во время сбора.")
         print("В следующий раз файл сессии может быть обновлен автоматически.")
         
-        if os.path.exists(SESSION_FILE):
-             os.remove(SESSION_FILE)
+        if os.path.exists(session_file):
+             os.remove(session_file)
              print("Локальный файл сессии удален для форсирования новой авторизации.")
 
     all_items = []
