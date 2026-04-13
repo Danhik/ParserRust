@@ -241,23 +241,53 @@ python steam_price_overview_parser.py --names names.txt --proxies proxies.txt --
 
 Для сайта Skinswap.com создано два парсера: для сбора общего инвентаря сайта и для парсинга личного инвентаря авторизованного пользователя.
 
-## 1. Парсер сайта Skinswap (`skinswap_parser.py`)
+## 1. Парсер сайта Skinswap — браузерный (`skinswap_browser_parser.py`) ✅ Рекомендуется
 
-Парсит весь доступный инвентарь на самом сайте (обменник).
-Работает **без авторизации** на чистых `requests` с обходом защиты Cloudflare.
+Парсит весь доступный инвентарь сайта через **реальный браузер (Playwright)**.
+Cloudflare проходится автоматически. Данные перехватываются из Network (API JSON) во время скролла.
 
 **Особенности:**
-- ⚡ Многопоточный сбор (`--workers`).
-- 🛡️ Автоматический обход Cloudflare с помощью `OPTIONS` preflight запросов.
-- 🔄 Поддержка и умная ротация прокси (каждый поток держит прокси до первого бана/ошибки).
+- 🧭 Работает как реальный пользователь — Cloudflare не блокирует
+- 🛡️ Профиль Chrome сохраняется (`./chrome_profile`) — CF-куки между запусками живут
+- 📡 Перехват ответов `api.skinswap.com/api/site/inventory` прямо в браузере
+- 🔄 Автоматический скролл инвентаря до конца списка
+- 📊 Сохранение в Excel (Name, Price, Overstock Limit, Overstock Count)
+- 🪵 Подробные логи (`--verbose`)
 
-**Пример запуска:**
+**Установка зависимостей:**
 ```bash
-python skinswap_parser.py --workers 5 --proxies proxies.txt --out skinswap_items.xlsx --verbose
+pip install playwright openpyxl
+playwright install chromium
 ```
-*По умолчанию парсит предметы Rust (`--appid 252490`). Для CS:GO добавьте `--appid 730`.*
 
-## 2. Парсер личного инвентаря Skinswap (`skinswap_user_inventory_parser.py`)
+**Запуск:**
+```bash
+# Обычный запуск (Rust, ~1600+ предметов)
+python skinswap_browser_parser.py --out skinswap_items.xlsx
+
+# С подробными логами
+python skinswap_browser_parser.py --out skinswap_items.xlsx --verbose
+```
+
+**Параметры:**
+- `--out` — выходной файл Excel (по умолчанию `skinswap_items.xlsx`)
+- `--scroll-pause` — пауза между скроллами (сек, по умолчанию `1.0`)
+- `--stable-rounds` — остановка после N шагов без новых предметов (по умолчанию `5`)
+- `--init-wait` — ожидание после загрузки страницы (сек, по умолчанию `3.0`)
+- `--user-data-dir` — путь к профилю Chrome (по умолчанию `./chrome_profile`)
+- `--headless` — запуск без видимого окна (не рекомендуется)
+- `--max-items` — лимит предметов (0 = без лимита)
+- `--verbose` — подробные логи
+
+---
+
+## 2. Парсер сайта Skinswap — API (`skinswap_parser.py`) ⚠️ Устарел
+
+> ⚠️ **Внимание:** Этот парсер работает напрямую через `requests` и подвержен блокировкам Cloudflare (402 ошибки). Рекомендуется использовать `skinswap_browser_parser.py`.
+
+Парсит инвентарь через прямые HTTP-запросы к API с обходом Cloudflare через `curl_cffi`.
+
+## 3. Парсер личного инвентаря Skinswap (`skinswap_user_inventory_parser.py`)
 
 Парсит **ваш личный инвентарь**, который видит сайт Skinswap.
 Использует **гибридный подход**: Selenium для первичной авторизации + быстрые `requests` для сбора.
