@@ -20,6 +20,15 @@ def format_price(cents: Optional[int]) -> str:
     return f"{cents / 100.0:.2f}".replace(".", ",")
 
 
+def to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_default_user_agent() -> str:
     return (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -285,7 +294,65 @@ def flatten_items(grouped_items: Dict[str, List[Dict[str, Any]]]) -> List[Dict[s
     return out
 
 
-def save_to_excel(items: List[Dict[str, Any]], out_path: str) -> None:
+def classify_item(item: Dict[str, Any], min_trade_price_cents: int = 3) -> Dict[str, bool]:
+    """
+    Определяем, можно ли реально депнуть предмет в бот.
+    Логика основана на наблюдениях из API:
+    - tradable == 1
+    - enableDeposit == 1
+    - maxDeposit > 0
+    - price >= min_trade_price_cents (по наблюдениям, вещи <= $0.02 часто недоступны)
+    - отдельно считаем избыток (maxDeposit <= 0 или currentStock >= botMaxQuantity)
+    """
+    tradable_ok = item.get("tradable") == 1
+    deposit_enabled = item.get("enableDeposit") == 1
+
+    max_deposit = to_float(item.get("maxDeposit"))
+    deficit = to_float(item.get("itemDeficit"))
+    sell_price = to_float(item.get("sellPrice"))
+    trade_price = to_float(item.get("price"))
+
+    current_stock = to_float(item.get("currentStock"))
+    bot_max = to_float(item.get("botMaxQuantity"))
+    if bot_max is None:
+        bot_max = to_float(item.get("wantedStock"))
+
+    has_overstock = False
+    if max_deposit is not None and max_deposit <= 0:
+        has_overstock = True
+    elif current_stock is not None and bot_max is not None and bot_max >= 0 and current_stock >= bot_max:
+        has_overstock = True
+
+    has_nonpositive_deficit = deficit is not None and deficit <= 0
+    has_no_sell_price = sell_price is not None and sell_price <= 0
+    has_too_low_trade_price = trade_price is not None and trade_price < float(min_trade_price_cents)
+
+    # Ключевой флаг доступности депозита.
+    can_deposit = (
+        tradable_ok
+        and deposit_enabled
+        and (max_deposit is None or max_deposit > 0)
+        and not has_too_low_trade_price
+        and not has_overstock
+    )
+
+    unavailable = not can_deposit
+    unavailable_and_overstock = unavailable and has_overstock
+
+    return {
+        "can_deposit": can_deposit,
+        "tradable_ok": tradable_ok,
+        "deposit_enabled": deposit_enabled,
+        "has_overstock": has_overstock,
+        "has_nonpositive_deficit": has_nonpositive_deficit,
+        "has_no_sell_price": has_no_sell_price,
+        "has_too_low_trade_price": has_too_low_trade_price,
+        "unavailable": unavailable,
+        "unavailable_and_overstock": unavailable_and_overstock,
+    }
+
+
+def save_to_excel(items: List[Dict[str, Any]], out_path: str, min_trade_price_cents: int = 3) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "My Tradeit Inventory"
@@ -293,6 +360,15 @@ def save_to_excel(items: List[Dict[str, Any]], out_path: str) -> None:
 
     seen = set()
     saved = 0
+    skipped = 0
+    skipped_unavailable = 0
+    skipped_overstock = 0
+    skipped_unavailable_and_overstock = 0
+    skipped_not_tradable = 0
+    skipped_deposit_disabled = 0
+    skipped_no_sell_price = 0
+    skipped_too_low_trade_price = 0
+    skipped_nonpositive_deficit = 0
 
     for item in items:
         unique_id = item.get("assetId") or item.get("id") or item.get("_id")
@@ -300,6 +376,27 @@ def save_to_excel(items: List[Dict[str, Any]], out_path: str) -> None:
             continue
         if unique_id is not None:
             seen.add(unique_id)
+
+        status = classify_item(item, min_trade_price_cents=min_trade_price_cents)
+        if not status["can_deposit"]:
+            skipped += 1
+            if status["unavailable"]:
+                skipped_unavailable += 1
+            if status["has_overstock"]:
+                skipped_overstock += 1
+            if status["unavailable_and_overstock"]:
+                skipped_unavailable_and_overstock += 1
+            if not status["tradable_ok"]:
+                skipped_not_tradable += 1
+            if not status["deposit_enabled"]:
+                skipped_deposit_disabled += 1
+            if status["has_no_sell_price"]:
+                skipped_no_sell_price += 1
+            if status["has_too_low_trade_price"]:
+                skipped_too_low_trade_price += 1
+            if status["has_nonpositive_deficit"]:
+                skipped_nonpositive_deficit += 1
+            continue
 
         name = item.get("name", "Unknown")
         trade_price = format_price(item.get("price"))
@@ -318,6 +415,18 @@ def save_to_excel(items: List[Dict[str, Any]], out_path: str) -> None:
         try:
             wb.save(out_path)
             print(f"Сохранено {saved} предметов в {out_path}.")
+            print(
+                "Отфильтровано: "
+                f"{skipped} | "
+                f"недоступно={skipped_unavailable}, "
+                f"избыток={skipped_overstock}, "
+                f"недоступно+избыток={skipped_unavailable_and_overstock}, "
+                f"tradable!=1={skipped_not_tradable}, "
+                f"enableDeposit!=1={skipped_deposit_disabled}, "
+                f"sellPrice<=0(справочно)={skipped_no_sell_price}, "
+                f"price<{min_trade_price_cents}c={skipped_too_low_trade_price}, "
+                f"itemDeficit<=0(справочно)={skipped_nonpositive_deficit}"
+            )
             return
         except PermissionError:
             print(f"[Writer] Файл {out_path} занят. Попытка {i+1}/5 через 5 сек...")
@@ -343,6 +452,12 @@ def main() -> None:
     ap.add_argument("--timeout", type=int, default=15, help="Таймаут запроса (сек)")
     ap.add_argument("--task-retries", type=int, default=5, help="Попыток загрузки API")
     ap.add_argument("--session-max-age-hours", type=int, default=168, help="Сколько часов хранить сессию")
+    ap.add_argument(
+        "--min-trade-price",
+        type=int,
+        default=3,
+        help="Минимальная цена предмета для включения в Excel (в центах, по умолчанию: 3; отсекает <= $0.02)",
+    )
     ap.add_argument("--verbose", action="store_true", help="Подробные логи")
     args = ap.parse_args()
 
@@ -385,7 +500,7 @@ def main() -> None:
         print("Инвентарь пуст или нет данных для сохранения.")
         return
 
-    save_to_excel(items, args.out)
+    save_to_excel(items, args.out, min_trade_price_cents=args.min_trade_price)
 
 
 if __name__ == "__main__":

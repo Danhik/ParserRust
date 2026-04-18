@@ -358,6 +358,7 @@ python tradeit_parser.py --workers 10 --proxies proxies.txt --out tradeit_items.
 - ⚡ **Быстрые повторные запуски**: если сессия валидна, браузер не запускается
 - 👥 **Мультиаккаунтность `--user-profile`**: отдельный файл сессии под каждый аккаунт
 - ✅ Автоматическая проверка валидности сессии перед запросом
+- 🚫 Фильтрация недоступных предметов: скрипт исключает позиции с низкой ценой (по умолчанию `<= $0.02`) и позиции в **избытке** (`maxDeposit <= 0` или `currentStock >= botMaxQuantity`)
 - 📊 Экспорт в Excel: `Name`, `Price (Trade)`, `In Bot Now`, `Bot Max`
 
 **Требования:**
@@ -378,6 +379,9 @@ python tradeit_user_inventory_parser.py --game-id 252490 --user-profile main --o
 
 # Запуск для CS:GO
 python tradeit_user_inventory_parser.py --game-id 730 --user-profile cs --out tradeit_cs_user.xlsx --verbose
+
+# Настройка минимальной цены (в центах): 3 = от $0.03
+python tradeit_user_inventory_parser.py --game-id 252490 --user-profile rust --min-trade-price 3 --verbose
 ```
 
 **Параметры:**
@@ -387,4 +391,5 @@ python tradeit_user_inventory_parser.py --game-id 730 --user-profile cs --out tr
 - `--timeout` — таймаут запроса (сек)
 - `--task-retries` — количество попыток API-запроса
 - `--session-max-age-hours` — максимальный возраст локальной сессии в часах
+- `--min-trade-price` — минимальная цена предмета для включения в Excel (в центах, по умолчанию `3`, то есть от `$0.03`)
 - `--verbose` — подробные логи
