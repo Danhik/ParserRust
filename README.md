@@ -309,3 +309,82 @@ python skinswap_user_inventory_parser.py --workers 3 --user-profile bot1 --accep
 # Запуск только для "принимаемых" вещей (строгий формат вывода)
 python skinswap_user_inventory_parser.py --workers 3 --accepted-only --verbose
 ```
+
+---
+
+# Парсеры Tradeit.gg
+
+Для сайта Tradeit.gg добавлены два парсера: для общего инвентаря сайта и для парсинга личного инвентаря авторизованного пользователя.
+
+## 1. Парсер сайта Tradeit (`tradeit_parser.py`)
+
+Парсит весь доступный инвентарь сайта через API `tradeit.gg/api/v2/inventory/data` (без авторизации).
+
+**Особенности:**
+- ⚡ Многопоточный сбор (`--workers`)
+- 🌐 Поддержка прокси + ротация при ошибках (`--proxies`, `--proxy-passes`)
+- 🔁 Повторы запросов при сетевых ошибках и rate limit (`--task-retries`)
+- 🧠 Сбор до конца инвентаря (остановка только на пустой странице)
+- 📊 Экспорт в Excel только нужных колонок: `Name`, `Price (Trade)`
+
+**Примеры запуска:**
+```bash
+# Базовый запуск (Rust)
+python tradeit_parser.py --game-id 252490 --out tradeit_items.xlsx
+
+# Быстрый запуск с прокси и логами
+python tradeit_parser.py --workers 10 --proxies proxies.txt --out tradeit_items.xlsx --verbose
+```
+
+**Параметры:**
+- `--game-id` — ID игры (`252490` Rust, `730` CS:GO)
+- `--sort` — сортировка (`Popularity`, `Price`, `PriceReversed`, `Name`)
+- `--limit` — размер страницы API (по умолчанию `160`)
+- `--workers` — количество потоков
+- `--task-retries` — число попыток на страницу
+- `--proxies` — файл с прокси
+- `--proxy-passes` — количество проходов по списку прокси
+- `--timeout` — таймаут запроса (сек)
+- `--out` — выходной Excel файл
+- `--verbose` — подробные логи
+
+## 2. Парсер личного инвентаря Tradeit (`tradeit_user_inventory_parser.py`)
+
+Парсит **ваш личный инвентарь** на Tradeit через API `tradeit.gg/api/v2/inventory/my/data`.
+Использует **гибридный подход**: Selenium/UC для первичной авторизации + `requests` для последующих запусков.
+
+**Особенности:**
+- 🔐 **Ручная авторизация Steam (только 1-й раз)**: при первом запуске открывается браузер, после входа сессия сохраняется в `tradeit_session_<имя>.json`
+- ⚡ **Быстрые повторные запуски**: если сессия валидна, браузер не запускается
+- 👥 **Мультиаккаунтность `--user-profile`**: отдельный файл сессии под каждый аккаунт
+- ✅ Автоматическая проверка валидности сессии перед запросом
+- 📊 Экспорт в Excel: `Name`, `Price (Trade)`, `In Bot Now`, `Bot Max`
+
+**Требования:**
+- Python **3.9+**
+- Google Chrome (актуальная версия)
+- Зависимости:
+```bash
+pip install requests openpyxl undetected-chromedriver selenium
+```
+
+**Примеры запуска:**
+```bash
+# Первый запуск (Rust): откроется браузер для входа через Steam
+python tradeit_user_inventory_parser.py --game-id 252490 --user-profile main --verbose
+
+# Повторный запуск (сессия уже сохранена)
+python tradeit_user_inventory_parser.py --game-id 252490 --user-profile main --out tradeit_user_items.xlsx
+
+# Запуск для CS:GO
+python tradeit_user_inventory_parser.py --game-id 730 --user-profile cs --out tradeit_cs_user.xlsx --verbose
+```
+
+**Параметры:**
+- `--game-id` — ID игры (`252490` Rust, `730` CS:GO)
+- `--out` — выходной Excel файл
+- `--user-profile` — имя профиля сессии (`tradeit_session_<имя>.json`)
+- `--timeout` — таймаут запроса (сек)
+- `--task-retries` — количество попыток API-запроса
+- `--session-max-age-hours` — максимальный возраст локальной сессии в часах
+- `--verbose` — подробные логи
