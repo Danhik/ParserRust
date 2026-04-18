@@ -33,17 +33,42 @@ def get_random_user_agent() -> str:
 # Session Management (Selenium)
 # -------------------------------------------------------------
 
+def _get_chrome_major_version() -> Optional[int]:
+    """Определяет major-версию установленного Chrome."""
+    import subprocess
+    paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                out = subprocess.check_output(
+                    ['powershell', '-Command', f'(Get-Item "{path}").VersionInfo.ProductVersion'],
+                    stderr=subprocess.DEVNULL, timeout=5
+                ).decode().strip()
+                major = int(out.split(".")[0])
+                print(f"Обнаружена версия Chrome: {out} (major={major})")
+                return major
+            except Exception:
+                pass
+    return None
+
+
 def get_session_cookies_via_selenium(session_file: str) -> dict:
     print("Запуск браузера для авторизации. Пожалуйста, войдите через Steam...")
     
     options = uc.ChromeOptions()
     # options.add_argument('--headless') # Нельзя headless, нужна ручная авторизация
     
-    # User has Chrome 145, force driver fallback
+    chrome_major = _get_chrome_major_version()
     try:
-        driver = uc.Chrome(options=options, version_main=145)
+        if chrome_major:
+            driver = uc.Chrome(options=options, version_main=chrome_major)
+        else:
+            driver = uc.Chrome(options=options)
     except Exception as e:
-        print(f"Ошибка запуска UC (Chrome 145): {e}. Пробуем обычный запуск...")
+        print(f"Ошибка запуска UC с version_main={chrome_major}: {e}. Пробуем без указания версии...")
         driver = uc.Chrome(options=options)
     
     try:
